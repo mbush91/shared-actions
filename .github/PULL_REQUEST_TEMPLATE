@@ -4,7 +4,7 @@ ticket: none
 ****
 <!--commit body should be wrapped at 72 chars as long as this comment-->
 <!--
-Describe what the PR DOES in the commit body above.
+TEST-Describe what the PR DOES in the commit body above.
 Put notes on how to test in the testing section below.
 -->
 
