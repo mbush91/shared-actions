@@ -1,0 +1,45 @@
+name: deploy cdk
+
+on:
+  workflow_call:
+    outputs:
+      stage:
+        description: "the valid stage name"
+        value: ${{ jobs.generateStageName.outputs.stage }}
+
+jobs:
+  generateStageName:
+    runs-on: ubuntu-latest
+    outputs:
+      stage: ${{ steps.final.outputs.stage }}
+    steps:
+      - uses: rlespinasse/slugify-value@v1.x
+        with:
+          key: GITHUB_HEAD_REF
+
+      - name: process
+        # requirements:
+        # * no .
+        # * no --
+        # * no _
+        # * s3 bucket max size 63 chars, bucket name is "docs.$stage.pss-wzdx.tomesoftware.com"
+        run: |
+          stage="pr-${{ github.event.number }}-${{ env.GITHUB_HEAD_REF_SLUG }}"
+          stage=$(echo "$stage" | tr _. - | sed 's/--\+/-/g' | head -c32)
+          echo "INTERMEDIATE_STAGE=$stage" >> $GITHUB_ENV
+
+      - uses: rlespinasse/slugify-value@v1.x
+        with:
+          key: STAGE
+          value: ${{ env.INTERMEDIATE_STAGE }}
+
+      - id: final
+        name: set stage variable
+        # max length set by s3 bucket name length
+        # slugify leaves _ which aren't valid cloudformation stack names
+        run: |
+          echo "stage=${{ env.STAGE_SLUG }}" >> $GITHUB_OUTPUT
+
+      - name: print
+        run: |
+          echo "stage: '${{ steps.final.outputs.stage }}'"

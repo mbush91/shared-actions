@@ -1,0 +1,59 @@
+name: deploy cdk
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        type: string
+
+# right now this requires you to do secrets: inherit, it would be cool if we
+# specified what secrets we need
+# Also if we limited permissions
+jobs:
+  aws-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: print stage
+        run: echo "STAGE=${{ inputs.stage }}"
+
+      - name: checkout the files
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all history
+          fetch-tags: true
+
+      - name: install node dependencies
+        uses: bahmutov/npm-install@v1
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: create a github deployment
+        uses: bobheadxi/deployments@v1
+        id: deployment
+        with:
+          step: start
+          env: ${{ inputs.stage }}
+          ref: ${{ github.head_ref }}
+          desc: env being updated
+
+      - name: deploy the stack on AWS
+        id: cdk_deploy
+        run: npm run awsDeploy
+        env:
+          STAGE: ${{ inputs.stage }}
+
+      - name: update the github deployment status
+        uses: bobheadxi/deployments@v1
+        if: always()
+        with:
+          step: finish
+          status: ${{ job.status }}
+          deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+          env_url: ${{ steps.cdk_deploy.outputs.env_url }}
+          env: ${{ inputs.stage }}
+          desc: env updated!

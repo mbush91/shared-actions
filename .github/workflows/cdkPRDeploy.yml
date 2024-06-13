@@ -1,0 +1,37 @@
+name: PR Deploy
+
+on:
+  pull_request:
+    types: [labeled, opened, synchronize]
+concurrency:
+  group: CDK-CD-PR-${{ github.event.number }}
+
+jobs:
+  getStageName:
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == '🚀 deploy') ||
+      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, '🚀 deploy'))
+    uses: ./.github/workflows/cdkPRStageName.yml
+
+  deploy:
+    needs: getStageName
+    uses: ./.github/workflows/cdkDeploy.yml
+    secrets: inherit
+    with:
+      stage: ${{ needs.getStageName.outputs.stage }}
+
+  test:
+    needs: [getStageName, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout the files
+        uses: actions/checkout@v4
+
+      - name: install node dependencies
+        uses: bahmutov/npm-install@v1
+
+      - name: run integration tests
+        run: npm run itest
+        env:
+          STAGE: ${{ needs.getStageName.outputs.stage }}
+          CI: true

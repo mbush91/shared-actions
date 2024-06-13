@@ -1,0 +1,16 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: CDK-CD-prod
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/cdkDeploy.yml
+    secrets: inherit
+    with:
+      stage: "prod"

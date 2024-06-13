@@ -1,0 +1,16 @@
+name: Develop Deploy
+
+on:
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: CDK-CD-dev
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/cdkDeploy.yml
+    secrets: inherit
+    with:
+      stage: "dev"

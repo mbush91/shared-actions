@@ -1,0 +1,100 @@
+name: automerge
+on:
+  pull_request:
+    types:
+      - labeled
+      - synchronize
+      - opened
+      - reopened
+      - unlocked
+  pull_request_review:
+    types:
+      - submitted
+  check_suite:
+    types:
+      - completed
+  status: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  decideIfGoodPR:
+    # github.sha is the last commit on the default branch, so if the github.event.sha
+    # matches github.sha, we are on the default branch and don't want to run
+    # Also if the status wasn't successful we don't want to run
+    if: ${{ (github.event_name != 'status' || (github.event.state == 'success' && github.sha != github.event.sha)) }}
+    runs-on: ubuntu-latest
+    outputs:
+      good: ${{ steps.saveResult.outputs.good }}
+    steps:
+      - name: getSHA
+        env:
+          EVENT_NAME: "${{ github.event_name }}"
+          PR_SHA: "${{ github.event.pull_request.head.sha }}"
+          STATUS_SHA: "${{ github.event.sha }}"
+        run: |
+          [[ "$EVENT_NAME" = "status" ]] && sha="$STATUS_SHA" || sha="$PR_SHA"
+          echo "SHA=$sha" >> $GITHUB_ENV
+
+      - name: decideIfPR
+        env:
+          SHA: "${{ env.SHA }}"
+          REPO: "${{ github.repository }}"
+        run: |
+          json=$(curl --silent -G \
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/search/issues?q=repo:$REPO+is:open+is:pr+sha:$SHA")
+          result=$(echo "$json" | jq -r '.total_count != 0')
+          echo "IS_PR=$result" >> $GITHUB_ENV
+
+      - name: decideIfCommitPassing
+        env:
+          SHA: "${{ env.SHA }}"
+          REPO: "${{ github.repository }}"
+        run: |
+          json=$(curl --silent -G \
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/$REPO/commits/$SHA/status")
+          echo "response: '$json'"
+          result=$(echo "$json" | jq -r '.state == "success"')
+          echo "COMMIT_PASSING=$result" >> $GITHUB_ENV
+
+      - name: combineResults
+        run: |
+          echo "IS_PR: ${{ env.IS_PR }}"
+          echo "COMMIT_PASSING: ${{ env.COMMIT_PASSING }}"
+          if [[ "${{ env.IS_PR }}" = "true" && "${{ env.COMMIT_PASSING }}" = "true" ]]; then
+            echo "GOOD=true" >> $GITHUB_ENV
+          else
+            echo "GOOD=false" >> $GITHUB_ENV
+          fi
+
+      - id: saveResult # need to set step outputs on their own for some reason?
+        run: echo "::set-output name=good::${{ env.GOOD }}"
+
+      - name: debug
+        run: |
+          echo "STEPS: $STEPS"
+          echo "is pr: ${{ env.IS_PR }}"
+          echo "passing: ${{ env.COMMIT_PASSING }}"
+        env:
+          STEPS: ${{ toJson(steps) }}
+
+  automerge:
+    needs: decideIfGoodPR
+    if: ${{ needs.decideIfGoodPR.outputs.good == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: automerge
+        name: automerge
+        uses: "pascalgn/automerge-action@v0.16.2"
+        env:
+          # use a PAT because that way we trigger workflows on merge
+          GITHUB_TOKEN: "${{ secrets.TOME_GITHUB_STATUS_TOKEN }}"
+          MERGE_LABELS: "automerge"
+          MERGE_REMOVE_LABELS: "automerge"
+          MERGE_METHOD: "squash"
+          MERGE_COMMIT_MESSAGE: "pull-request-title-and-description"
+          MERGE_COMMIT_MESSAGE_REGEX: "(.*)\n^\\*\\*\\*\\*"

@@ -1,0 +1,20 @@
+# doc: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions
+name: Static Analysis
+on:
+  push:
+jobs:
+  analyze:
+    name: static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout the files
+        uses: actions/checkout@v4
+
+      - name: install node dependencies
+        uses: bahmutov/npm-install@v1
+
+      - name: run analysis
+        run: npm run static
+
+      - name: run lint.sh
+        run: ./bin/lint.sh --all --non-interactive --todo-fail
